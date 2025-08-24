@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TVCode Pro App</title>
+
+  <style>
+    :root {
+      --bg: #1e1e1e; --panel:#252526; --panel2:#2d2d30; --text:#e6e6e6; --muted:#a1a1aa; --blue:#3391ff; --green:#22c55e; --red:#ef4444; --yellow:#f59e0b;
+    }
+    *{ box-sizing: border-box }
+    html, body { height: 100% }
+    body { margin:0; background:var(--bg); color:var(--text); font: 14px/1.4 system-ui, Segoe UI, Roboto, Arial, sans-serif }
+    .app { display:grid; grid-template-rows: 36px 1fr 22px; height:100vh }
+    .menubar { display:flex; gap:8px; align-items:center; padding:0 10px; background:var(--panel); border-bottom:1px solid #0006; user-select:none }
+    .brand { font-weight:600; }
+    .menubar button, .toolbar button { background:transparent; color:var(--text); border:0; padding:6px 8px; border-radius:6px; cursor:pointer }
+    .menubar button:hover, .toolbar button:hover { background:#ffffff14 }
+    .layout { display:grid; grid-template-columns: 220px 1fr 36%; min-height:0 }
+    .sidebar { background:#202020; border-right:1px solid #0006; overflow:auto }
+    .section { padding:8px 10px; font-size:12px; color:var(--muted); text-transform:uppercase }
+    .tree { padding:4px 6px }
+    .node { display:flex; gap:8px; align-items:center; padding:6px 8px; border-radius:8px; cursor:pointer }
+    .node.active, .node:hover { background:#ffffff14 }
+    .tabs { display:flex; gap:6px; padding:4px; background:var(--panel); border-bottom:1px solid #0006; overflow:auto }
+    .tab { display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:8px; background:var(--panel2); border:1px solid #0006; cursor:pointer; white-space:nowrap }
+    .tab.active { outline:2px solid var(--blue) }
+    .main { display:grid; grid-template-rows: auto 1fr; min-height:0 }
+    #editor { height:100%; width:100% }
+    .preview { border-left:1px solid #0006; background:#111; display:grid; grid-template-rows: 32px 1fr }
+    .preview header { display:flex; align-items:center; justify-content:space-between; padding:4px 8px; background:var(--panel); border-bottom:1px solid #0006 }
+    iframe { width:100%; height:100%; border:0; background:white }
+    .status { display:flex; align-items:center; gap:12px; padding:2px 8px; font-size:12px; color:var(--muted); background:var(--panel); border-top:1px solid #0006 }
+    .kbd { border:1px solid #0006; border-bottom-width:3px; padding:0 6px; border-radius:6px; background:var(--panel2) }
+
+    /* Command palette */
+    .overlay { position:fixed; inset:0; background:#0008; display:none; place-items:center; z-index:20 }
+    .palette { width:min(720px, 92vw); background:#111; border:1px solid #444; border-radius:12px; box-shadow:0 10px 30px #000a; overflow:hidden }
+    .palette input { width:100%; padding:12px 14px; background:#0c0c0c; color:#eee; border:0; outline:none; font-size:16px }
+    .palette .items { max-height:50vh; overflow:auto }
+    .palette .item { padding:10px 14px; border-top:1px solid #222; cursor:pointer }
+    .palette .item:hover, .palette .item.active { background:#1f2937 }
+
+    @media (max-width: 1100px){ .layout { grid-template-columns: 1fr } .preview{ display:none } }
+  </style>
+
+  
+</head>
+<body>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='40' fill='%231e1e1e'/%3E%3Cpath fill='%23fff' d='M60 64h136a12 12 0 0 1 12 12v104a12 12 0 0 1-12 12H60a12 12 0 0 1-12-12V76a12 12 0 0 1 12-12zm16 20v84h104V84H76z'/%3E%3Cpath fill='%233391ff' d='M92 108h40v12H92zm0 24h72v12H92z'/%3E%3C/svg%3E" />
+  
+  <!-- Monaco Editor (CDN) -->
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs/loader.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <div class="app" role="application" aria-label="TVCode Pro">
+    <div class="menubar">
+      <div class="brand">TVCode Pro</div>
+      <div class="toolbar" style="margin-left:12px">
+        <button id="m-file">File</button>
+        <button id="m-edit">Edit</button>
+        <button id="m-view">View</button>
+        <button id="m-run">Run</button>
+        <button id="m-help">Help</button>
+      </div>
+      <div style="margin-left:auto; display:flex; gap:6px">
+        <button id="btn-quickopen" title="Quick Open (Ctrl+P)">Quick Open</button>
+        <button id="btn-palette" title="Command Palette (Ctrl+Shift+P)">Commands</button>
+        <button id="btn-theme" title="Toggle Theme">Theme</button>
+        <button id="btn-run" title="Run (Ctrl+Enter)">Run</button>
+        <button id="btn-save" title="Save ZIP (Ctrl+S)">Save</button>
+        <button id="btn-open" title="Open…">Open</button>
+        <input type="file" id="file-open" class="hidden" style="display:none" multiple accept=".html,.css,.js,.json,.md,.txt,.zip" />
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="section">Explorer</div>
+        <div class="tree" id="tree"></div>
+      </aside>
+
+      <section class="main">
+        <div class="tabs" id="tabs"></div>
+        <div id="editor"></div>
+      </section>
+
+      <section class="preview">
+        <header>
+          <div>Preview</div>
+          <div style="display:flex; gap:6px">
+            <button id="btn-popout">Pop‑out</button>
+            <button id="btn-reload">Reload</button>
+          </div>
+        </header>
+        <iframe id="frame"></iframe>
+      </section>
+    </div>
+
+    <div class="status">
+      <span id="status">Ready</span>
+      <span>•</span>
+      <span>Shortcuts: <span class="kbd">Ctrl</span>+<span class="kbd">S</span>, <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span>, <span class="kbd">Ctrl</span>+<span class="kbd">P</span>, <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">P</span></span>
+    </div>
+  </div>
+
+  <!-- Command Palette -->
+  <div class="overlay" id="overlay">
+    <div class="palette">
+      <input id="palette-input" placeholder="Type a command" aria-label="Command Palette"/>
+      <div class="items" id="palette-items"></div>
+    </div>
+  </div>
+
+\n\n`,
+  'style.css': `:root{ --brand:#3391ff }\nbody{ font-family: system-ui, Segoe UI, Roboto, Arial; margin:2rem }\nh1{ color: var(--brand) }\nbutton{ padding:.6rem 1rem; border-radius:.6rem; border:1px solid #0002 }`,
+  'script.js': `function hello(){ alert('Hello from TVCode Pro!'); }`,
+  'README.md': `# TVCode Pro\nA single-file, VSCode-like editor that runs in your TV browser.\n- Monaco editor (syntax, minimap, multi-cursor)\n- Command palette (Ctrl+Shift+P)\n- Quick Open (Ctrl+P)\n- ZIP import/export\n- Preview pane`,
+  'settings.json': `{
+  "theme": "vs-dark",
+  "wordWrap": "on",
+  "fontSize": 15,
+  "minimap": true
+}`
+};
+let project = {...DEFAULT};
+let openOrder = ['index.html']; // track tabs order
+let active = 'index.html';
+
+// Local storage
+const KEY = 'tvcode-pro-project-v1';
+const saveLocal = ()=>{ try{ localStorage.setItem(KEY, JSON.stringify({project, openOrder, active})); }catch{} };
+const loadLocal = ()=>{ try{ const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); project=d.project||project; openOrder=d.openOrder||openOrder; active=d.active||active; } }catch{} };
+
+// Build UI: tree + tabs
+function refreshTree(){
+  const t = $('#tree'); t.innerHTML='';
+  Object.keys(project).sort().forEach(name=>{
+    const n = document.createElement('div');
+    n.className = 'node'+(name===active?' active':'');
+    n.innerHTML = `📄 <span>${name}</span>`;
+    n.onclick = ()=> openFile(name);
+    t.appendChild(n);
+  });
+}
+function refreshTabs(){
+  const tabs = $('#tabs'); tabs.innerHTML='';
+  openOrder.forEach(name=>{
+    const el = document.createElement('button');
+    el.className = 'tab'+(name===active?' active':'');
+    el.innerHTML = `${name} <span style="opacity:.6">×</span>`;
+    el.onclick = (e)=>{ if(e.target.textContent==='×'){ closeTab(name); } else { openFile(name);} };
+    tabs.appendChild(el);
+  });
+}
+
+function openFile(name){
+  active = name; if(!openOrder.includes(name)) openOrder.push(name);
+  editor.setModel(models[name] || createModel(name, project[name]||''));
+  refreshTabs(); refreshTree();
+  put('Editing '+name); saveLocal();
+}
+function closeTab(name){
+  openOrder = openOrder.filter(n=>n!==name);
+  if(active===name){ active = openOrder[openOrder.length-1] || Object.keys(project)[0]; }
+  refreshTabs(); openFile(active);
+}
+
+// Monaco setup
+let monacoEditorLoaded = false;
+let editor; const models = {};
+function createModel(name, value){
+  const lang = name.endsWith('.html')?'html':name.endsWith('.css')?'css':name.endsWith('.js')?'javascript':name.endsWith('.json')?'json':name.endsWith('.md')?'markdown':'plaintext';
+  models[name] = monaco.editor.createModel(value, lang);
+  return models[name];
+}
+
+function applySettings(){
+  try{
+    const cfg = JSON.parse(project['settings.json']||'{}');
+    monaco.editor.setTheme(cfg.theme||'vs-dark');
+    editor.updateOptions({
+      wordWrap: cfg.wordWrap||'on',
+      fontSize: cfg.fontSize||15,
+      minimap: { enabled: cfg.minimap!==false },
+      automaticLayout: true,
+      smoothScrolling: true,
+    });
+  }catch{}
+}
+
+function buildHTML(){
+  const html = project['index.html']||'';
+  const css = project['style.css']||'';
+  const js  = project['script.js']||'';
+  let out = html;
+  if(!/\<link[^>]*style\.css/.test(html)){
+    out = out.replace('', `\n<style>\n${css}\n<\/style>\n`);
+  }
+  if(!/\
+
+  <script>
+    // Configure Monaco base path for AMD loader
+    const MONACO_BASE = "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min";
+    window.require = { paths: { 'vs': MONACO_BASE + '/vs' } };
+
+// ===== Simple VSCode-like App (Monaco based) =====
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const put = msg => $('#status').textContent = msg;
+
+// Project model
+const DEFAULT = {
+  'index.html': `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  \n  <link rel="stylesheet" href="style.css">\n</head>\n<body>\n  <h1>Welcome to TVCode Pro</h1>\n  <p>Edit files and press <strong>Run</strong>.</p>\n  <button onclick="hello()">Click</button>\n  <script src="script.js">
+
+]*script\.js/.test(html)){
+    out = out.replace('</body>', `\n<script>\n${js}\n<\/script>\n</body>`);
+  }
+  return out;
+}
+
+function run(){
+  const doc = $('#frame').contentWindow.document;
+  doc.open(); doc.write(buildHTML()); doc.close();
+  put('Preview updated');
+}
+
+async function saveZip(){
+  const zip = new JSZip();
+  Object.entries(project).forEach(([n,c])=> zip.file(n, c));
+  const blob = await zip.generateAsync({type:'blob'});
+  saveAs(blob, 'tvcode-pro.zip');
+  put('Saved tvcode-pro.zip');
+}
+
+async function openAny(files){
+  const zipFile = Array.from(files).find(f=>f.name.endsWith('.zip'));
+  if(zipFile){
+    const zip = await JSZip.loadAsync(zipFile);
+    const np = {};
+    await Promise.all(Object.keys(zip.files).map(async p=>{
+      const f = zip.files[p]; if(!f.dir){ np[p]= await f.async('string'); }
+    }));
+    project=np; openOrder=Object.keys(project); active=openOrder[0]||'index.html';
+    Object.keys(models).forEach(k=>models[k].dispose());
+    for(const [n,c] of Object.entries(project)){ createModel(n,c); }
+    editor.setModel(models[active]);
+    refreshTree(); refreshTabs(); run(); saveLocal(); put('Opened ZIP');
+    return;
+  }
+  for(const f of files){ project[f.name] = await f.text(); if(!models[f.name]) createModel(f.name, project[f.name]); }
+  if(files[0]) openFile(files[0].name); refreshTree(); refreshTabs(); run(); saveLocal(); put('Files opened');
+}
+
+async function openDirectory(){
+  if(!window.showDirectoryPicker){ alert('Directory access not supported in this browser. Use ZIP instead.'); return; }
+  const dir = await window.showDirectoryPicker();
+  project = {}; openOrder=[];
+  for await (const entry of dir.values()){
+    if(entry.kind==='file'){
+      const file = await entry.getFile();
+      const text = await file.text();
+      project[file.name]=text; openOrder.push(file.name);
+    }
+  }
+  Object.keys(models).forEach(k=>models[k].dispose());
+  for(const [n,c] of Object.entries(project)){ createModel(n,c); }
+  active=openOrder[0]||'index.html'; editor.setModel(models[active]);
+  refreshTree(); refreshTabs(); run(); saveLocal(); put('Opened folder');
+}
+
+function registerCommands(){
+  const cmds = [
+    { id:'file:new', label:'File: New Untitled File', run:()=>{ const name = prompt('File name', 'untitled.txt'); if(!name) return; project[name]=''; createModel(name,''); openFile(name); refreshTree(); saveLocal(); } },
+    { id:'file:savezip', label:'File: Save Project as ZIP', run: saveZip },
+    { id:'file:open', label:'File: Open Files…', run: ()=> $('#file-open').click() },
+    { id:'file:openFolder', label:'File: Open Folder (experimental)', run: openDirectory },
+    { id:'view:togglePreview', label:'View: Toggle Preview Pane', run: ()=>{ const p = document.querySelector('.preview'); const cs = window.getComputedStyle(p); if(cs.display==='none'){ p.style.display='grid'; } else { p.style.display='none'; } } },
+    { id:'view:toggleTheme', label:'View: Toggle Theme (Light/Dark)', run: ()=>{ const cfg = JSON.parse(project['settings.json']||'{}'); cfg.theme = (cfg.theme==='vs-dark')?'vs':'vs-dark'; project['settings.json']=JSON.stringify(cfg,null,2); applySettings(); saveLocal(); } },
+    { id:'run:preview', label:'Run: Update Preview', run: run },
+    { id:'help:about', label:'Help: About TVCode Pro', run: ()=> alert('TVCode Pro — VSCode-like single-file editor for TV browsers.') },
+  ];
+  return cmds;
+}
+
+// Palette UI
+const overlay = $('#overlay');
+const input = $('#palette-input');
+const list = $('#palette-items');
+const commands = registerCommands();
+function openPalette(){ overlay.style.display='grid'; input.value=''; renderPalette(commands); input.focus(); }
+function closePalette(){ overlay.style.display='none'; }
+function renderPalette(items){
+  list.innerHTML='';
+  items.forEach((it,i)=>{
+    const el = document.createElement('div'); el.className='item'+(i===0?' active':''); el.textContent=it.label; el.onclick=()=>{ it.run(); closePalette(); };
+    list.appendChild(el);
+  });
+}
+input.addEventListener('input', ()=>{
+  const q = input.value.toLowerCase();
+  const filtered = commands.filter(c=>c.label.toLowerCase().includes(q));
+  renderPalette(filtered);
+});
+window.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape' && overlay.style.display==='grid'){ closePalette(); }
+});
+
+// Quick Open
+function quickOpen(){
+  const files = Object.keys(project);
+  const name = prompt('Open file (type exact name)', files[0]||'');
+  if(name && project[name]!=null) openFile(name);
+}
+
+// Wire UI buttons
+$('#btn-palette').onclick = openPalette;
+$('#btn-quickopen').onclick = quickOpen;
+$('#btn-theme').onclick = ()=>{ const cfg = JSON.parse(project['settings.json']||'{}'); cfg.theme = (cfg.theme==='vs-dark')?'vs':'vs-dark'; project['settings.json']=JSON.stringify(cfg,null,2); applySettings(); saveLocal(); };
+$('#btn-run').onclick = run;
+$('#btn-reload').onclick = run;
+$('#btn-popout').onclick = ()=>{ const w=window.open('','_blank'); w.document.write(buildHTML()); w.document.close(); };
+$('#btn-save').onclick = saveZip;
+$('#btn-open').onclick = ()=> $('#file-open').click();
+$('#file-open').addEventListener('change', e=> openAny(e.target.files));
+
+// Global shortcuts
+document.addEventListener('keydown', (e)=>{
+  if(e.ctrlKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveZip(); }
+  if(e.ctrlKey && e.key==='Enter'){ e.preventDefault(); run(); }
+  if(e.ctrlKey && e.key.toLowerCase()==='p'){ e.preventDefault(); quickOpen(); }
+  if(e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='p'){ e.preventDefault(); openPalette(); }
+});
+
+// Load Monaco
+loadLocal();
+require(['vs/editor/editor.main'], function(){
+  monacoEditorLoaded = true;
+  editor = monaco.editor.create(document.getElementById('editor'), {
+    value: project[active],
+    language: 'html',
+    theme: 'vs-dark',
+    automaticLayout: true,
+    minimap: { enabled: true },
+    wordWrap: 'on',
+  });
+  // Create models
+  Object.entries(project).forEach(([n,c])=> createModel(n,c));
+  editor.setModel(models[active]);
+
+  // Change listener -> update project
+  editor.onDidChangeModelContent(()=>{
+    if(!editor.getModel()) return;
+    project[active] = editor.getValue();
+    saveLocal();
+  });
+
+  // Switch language on model change
+  editor.onDidChangeModel(()=>{
+    const name = active; const m = models[name]; if(!m) return;
+  });
+
+  refreshTree(); refreshTabs(); applySettings(); run(); put('Ready');
+});
+  </script>
+</body>
+</html>
